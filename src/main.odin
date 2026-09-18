@@ -2,10 +2,13 @@ package main
 
 import "core:fmt"
 import "core:thread"
+import "core:log"
+
+import rl "vendor:raylib"
+
 import vv "VisualVector"
 import "Globals"
 import bc "BarChart"
-import rl "vendor:raylib"
 import cam "Camera2DController"
 
 
@@ -33,10 +36,15 @@ BubbleSortOptimized::proc(t: ^thread.Thread) {
 }
 
 main::proc() {
+    context.logger = log.create_console_logger()
+    log.debug("Logger is up...")
+
     rl.InitWindow(Globals.SCREEN_WIDTH, Globals.SCREEN_HEIGHT, "Algo visualizer by Petr Chyla")
     defer rl.CloseWindow()
     rl.SetTargetFPS(60)
+    log.debug("Windows creation and FPS setting done...")
     camera2d := cam.new_camera_2d_controller()
+    log.debug("Camera has been created...")
 
 /*
     arr := make([dynamic]int)
@@ -50,8 +58,12 @@ main::proc() {
     visv := vv.new_visual_vector(dyn_arr)
     defer vv.destroy_visual_vector(&visv)
 
-    barc, _ := bc.new_bar_chart(&visv, BubbleSortOptimized)
+    barc, ok := bc.new_bar_chart(&visv, BubbleSortOptimized)
+    if !ok {
+        log.fatal("Bar Chart creation check failed in main.")
+    }
     
+    log.debug("Entering the main update loop...")
     for !rl.WindowShouldClose() {
         rl.BeginDrawing()
         rl.BeginMode2D(camera2d.camera)
@@ -60,5 +72,6 @@ main::proc() {
         bc.bar_chart_update(&barc, rl.GetFrameTime())
         rl.EndMode2D()
         rl.EndDrawing()
+        log.debug("Frame passed with succes...")
     }
 }

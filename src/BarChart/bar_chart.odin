@@ -1,7 +1,6 @@
 package BarChart
 
 import "core:strconv"
-import vv "../VisualVector"
 import "core:strings"
 import "core:slice"
 import "core:fmt"
@@ -9,29 +8,16 @@ import "base:intrinsics"
 import "core:thread"
 import "core:sync"
 import "core:sync/chan"
+import "core:log"
+
+import vv "../VisualVector"
 import "../Globals"
 import "../Utils"
 
 InstructionBag::struct {
     instructions: [dynamic]string,
     instruction_pointer: int,
-    move: proc(ib: ^InstructionBag, distance: int) -> bool,
-    get: proc(ib: ^InstructionBag) -> string,
     move_and_get: proc(ib: ^InstructionBag, distance: int) -> (string, bool),
-}
-
-ib_move::proc(ib: ^InstructionBag, distance: int) -> bool {
-    ib.instruction_pointer += distance
-    if ib.instruction_pointer < 0 {
-        ib.instruction_pointer = 0
-        return false
-    }
-    l := len(ib.instructions) 
-    if ib.instruction_pointer >= l {
-        ib.instruction_pointer = l-1
-        return false
-    }
-    return true
 }
 
 ib_get::proc(ib:^ InstructionBag) -> string {
@@ -39,21 +25,31 @@ ib_get::proc(ib:^ InstructionBag) -> string {
 }
 
 ib_move_and_get::proc(ib:^ InstructionBag, distance: int) -> (string, bool) {
-    ok := ib.move(ib, distance)
-    return ib.get(ib), ok
+    if len(ib.instructions) < 2 {
+        return "", false
+    }
+    ib.instruction_pointer += distance
+    if ib.instruction_pointer < 1 {
+        ib.instruction_pointer = 1
+        return "", false
+    }
+    l := len(ib.instructions) 
+    if ib.instruction_pointer >= l {
+        ib.instruction_pointer = l-1
+        return "", false
+    }
+    return ib.instructions[ib.instruction_pointer], true
 }
 
 new_instruction_bag::proc() -> InstructionBag { 
     return InstructionBag {
         make([dynamic]string),
         0,
-        ib_move,
-        ib_get,
         ib_move_and_get,
     }
 }
 
-destory_instruction_bat::proc(ib: InstructionBag) {
+destory_instruction_bag::proc(ib: InstructionBag) {
     delete(ib.instructions)
 }
 
@@ -61,22 +57,24 @@ IndexBag::struct {
     idxs: []int,
     idx_pointer: int,
     add: proc(ib: ^IndexBag, idx: int) -> bool,
-    get_all: proc(ib: IndexBag) -> []int,
+    get_all: proc(ib: ^IndexBag) -> []int,
     clear: proc(ib: ^IndexBag),
 }
 
 ib_add::proc(ib: ^IndexBag, idx: int) -> bool {
-    ib.idx_pointer += 1
     if ib.idx_pointer >= len(ib.idxs) {
-        ib.idx_pointer = len(ib.idxs) - 1
         return false
     }
     ib.idxs[ib.idx_pointer] = idx
+    ib.idx_pointer += 1
     return true
 }
 
-ib_get_all::proc(ib: IndexBag) -> []int {
-    return ib.idxs[:ib.idx_pointer]
+ib_get_all :: proc(ib: ^IndexBag) -> []int {
+    if ib.idx_pointer < 0 || len(ib.idxs) == 0 {
+        return ib.idxs[:0]
+    }
+    return ib.idxs[:ib.idx_pointer + 1]
 }
 
 ib_clear::proc(ib: ^IndexBag) {
@@ -107,34 +105,55 @@ BarChart::struct {
     delta_mark : f32,
 }
 
-execute_instruction::proc(bb: ^BarChart) {
-    //clear highlights
+execute_instruction::proc(bb: ^BarChart, instruction: string) {
+    //clear highlights, BUGGED: fails to clear completely
+    for i in bb.highlight_idxs.get_all(&bb.highlight_idxs) {
+        bb.bars[i].is_highlighted = false
+    }
     bb.highlight_idxs.clear(&bb.highlight_idxs)
+    log.debug("Highligted instructions cleared...")
 
     //split the instruction
-    cmd := bb.instructions.get(&bb.instructions)
-    cmds := strings.split(cmd, " ")
+    log.debugf("Instruction to be executed: %s", instruction)
+    cmds, err := strings.split(instruction, " ")
+    if err != .None {
+        log.fatal("Failed to split command.")
+    }
     if cmds[0] == "C" {
-        idx_a, _ := strconv.parse_int(cmds[1])
+        idx_a, ok_a := strconv.parse_int(cmds[1])
+        if !ok_a {
+            log.fatal("Failed to parse index a for comparison command.")
+        }
         bb.bars[idx_a].is_highlighted = true
         bb.highlight_idxs.add(&bb.highlight_idxs, idx_a)
 
-        idx_b, _ := strconv.parse_int(cmds[2])
+        idx_b, ok_b := strconv.parse_int(cmds[2])
+        if !ok_b {
+            log.fatal("Failed to parse index b for comparison command.")
+        }
         bb.bars[idx_b].is_highlighted = true
         bb.highlight_idxs.add(&bb.highlight_idxs, idx_a)
+
     } else if cmds[0] == "S" {
-        idx_a, _ := strconv.parse_int(cmds[1])
+        idx_a, ok_a := strconv.parse_int(cmds[1])
+        if !ok_a {
+            log.fatal("Failed to parse index a for comparison command.")
+        }
         bb.bars[idx_a].is_highlighted = true
         bb.highlight_idxs.add(&bb.highlight_idxs, idx_a)
 
-        idx_b, _ := strconv.parse_int(cmds[2])
+        idx_b, ok_b := strconv.parse_int(cmds[2])
+        if !ok_b {
+            log.fatal("Failed to parse index b for comparison command.")
+        }
         bb.bars[idx_b].is_highlighted = true
         bb.highlight_idxs.add(&bb.highlight_idxs, idx_a)
 
         slice.swap(bb.bars, idx_a, idx_b)
         bb.bars[idx_a].r.x, bb.bars[idx_b].r.x = bb.bars[idx_b].r.x, bb.bars[idx_a].r.x
+
     } else if cmds[0] == "DONE" {
-        for idx in bb.highlight_idxs.get_all(bb.highlight_idxs) {
+        for idx in bb.highlight_idxs.get_all(&bb.highlight_idxs) {
             bb.bars[idx].is_highlighted = false
         }
     }
@@ -154,8 +173,6 @@ map_value_to_height::proc(val, min_val, max_val : f32) -> f32 {
 
 generate_bars::proc(val_vec: []$T) -> ([]Bar, bool) 
 where intrinsics.type_is_numeric(T) {
-    bars := make_slice([]Bar, len(val_vec))
-
     bar_space := Globals.SCREEN_WIDTH / (len(val_vec) + 2)
     x, y : f32
     x = f32(bar_space)
@@ -164,12 +181,21 @@ where intrinsics.type_is_numeric(T) {
 
     val_vec_max, ok := slice.max(val_vec)
     if !ok {
-        return nil, false
+        log.errorf("While creating Bar Chart, failed to get the max value while generating bars.")
+        return make_slice([]Bar, 0), false
     }
     val_vec_min, ok2 := slice.min(val_vec)
     if !ok2 {
+        log.errorf("While creating Bar Chart, failed to get the min value while generating bars.")
+        return make_slice([]Bar, 0), false
+    }
+
+    bars, err := make_slice([]Bar, len(val_vec))
+    if err != .None {
+        log.errorf("While creating Bar Chart, failed to create slice for Bars: ", err)
         return nil, false
     }
+
     for v, idx in val_vec {
         bar_height := map_value_to_height(f32(v), f32(val_vec_min), f32(val_vec_max))
         bars[idx] = new_bar(x,y,bar_width,bar_height)
@@ -187,16 +213,17 @@ extract_initial_numbers::proc(instruction: string) -> ([]f32, bool) {
     for s, i in vals {
         val, ok := strconv.parse_f32(s)
         if !ok {
-            fmt.printfln("BarChart: Failed to parse the zero instruction.")
+            log.error("While creating Bar Chart, failed to parse the initial instruction.")
             return make_slice([]f32, 0), false
         }
+        log.debugf("Extracted initial number: %v", val)
         nums[i] = val
     }
     return nums, true
 }
 
 bar_chart_move::proc(bb: ^BarChart, distance: int) {
-    bb.instructions.move(&bb.instructions, distance)
+    bb.instructions.move_and_get(&bb.instructions, distance)
 }
 
 bar_chart_draw::proc(bb: ^BarChart) {
@@ -206,20 +233,24 @@ bar_chart_draw::proc(bb: ^BarChart) {
 }
 
 bar_chart_update::proc(bb: ^BarChart, delta_time: f32) {
-    bb.delta_accum += delta_time
-    bb.move(bb, 1)
     for {
         instruction, ok := chan.try_recv(bb.ch)
         if !ok {
+            log.debugf("Bar Chart received no further instruction. Breaking for this frame...")
             break
         }
         append(&bb.instructions.instructions, strings.clone(instruction))
+        log.debugf("Bar Chart succesfully received and stored instruction: %s", instruction)
+        //delete(instruction), crashes my program, should not be needed anyawy, since I use tprintf to create it
     }
+    bb.delta_accum += delta_time
+
     if bb.delta_accum >= bb.delta_mark {
+        log.debug("Delta marker passed!")
         bb.delta_accum = 0
-        ok := bb.instructions.move(&bb.instructions, 1)
+        instr, ok := bb.instructions.move_and_get(&bb.instructions, 1)
         if ok {
-            execute_instruction(bb)
+            execute_instruction(bb, instr)
         }
     }
     bar_chart_draw(bb)
@@ -270,24 +301,43 @@ new_bar_chart_file::proc(file_path: string) -> (BarChart, bool) {
     return bar_chart, true
 }
 */
+
+/*
+
+BarChart::struct {
+    ch: chan.Chan(string),
+    bars : []Bar,
+    instructions: InstructionBag,
+    highlight_idxs: IndexBag,
+    move : proc(bb: ^BarChart, direction: int),
+    delta_accum : f32, //below should be all zero init
+    delta_mark : f32,
+}
+*/
+
 new_bar_chart_vv::proc(visv: ^vv.VisualVector($T), algorithm: proc(t: ^thread.Thread)) -> (BarChart, bool) {
     instructions := new_instruction_bag()
     append(&instructions.instructions, visv.starting_state)
+    log.debugf("Starting state from visv: %s", visv.starting_state)
     nums, nums_ok := extract_initial_numbers(visv.starting_state)
     if !nums_ok {
-        fmt.println("Failed to extract numbers from starting state.")
+        log.fatal("While creating Bar Chart, failed to parse the initial instruction.")
         return BarChart{}, false
     }
     bars, gen_ok := generate_bars(nums)
     if !gen_ok{
-        fmt.println("Failed to create BarChart, bars cannot be generated from those values. Verify the first line of instructions.")
+        log.fatal("While creating Bar Chart, failed to generate bars from values given in initial instruction.")
         return BarChart{}, false
     }
     algo_thread := thread.create(algorithm)
+    if algo_thread == nil {
+        log.fatal("Failed to create the algo thread.")
+    }
     algo_thread.user_args = visv
-    thread.start(algo_thread)
+    thread.start(algo_thread) //no returns. Will panic on its own 
 
     bar_chart := BarChart {
+        ch = visv.ch,
         bars = bars,
         instructions = instructions,
         highlight_idxs = new_index_bag(5),

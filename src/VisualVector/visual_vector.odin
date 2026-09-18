@@ -63,6 +63,7 @@ new_visual_vector::proc(arr: [dynamic]$T) -> VisualVector(T) {
     fmt.sbprintf(&b, "%v", arr[last_elem])
 
     return {
+        ch = ch,
         arr = arr,
         starting_state = strings.clone(strings.to_string(b)),
         size = vv_size,
