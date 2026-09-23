@@ -12,7 +12,7 @@ import "core:log"
 
 import vv "../VisualVector"
 import "../Globals"
-import "../Utils"
+import con "../Connectors"
 
 InstructionBag::struct {
     instructions: [dynamic]string,
@@ -96,7 +96,7 @@ destroy_index_bag::proc(ib: ^IndexBag) {
 }
 
 BarChart::struct {
-    ch: chan.Chan(string),
+    connector : con.Connector,
     bars : []Bar,
     instructions: InstructionBag,
     highlight_idxs: IndexBag,
@@ -233,16 +233,13 @@ bar_chart_draw::proc(bb: ^BarChart) {
 }
 
 bar_chart_update::proc(bb: ^BarChart, delta_time: f32) {
-    for {
-        instruction, ok := chan.try_recv(bb.ch)
-        if !ok {
-            log.debugf("Bar Chart received no further instruction. Breaking for this frame...")
-            break
+    instructions, ok := con.receive_instructions(&bb.connector)
+    if ok {
+        for i in instructions {
+            append(&bb.instructions.instructions, strings.clone(i))
         }
-        append(&bb.instructions.instructions, strings.clone(instruction))
-        log.debugf("Bar Chart succesfully received and stored instruction: %s", instruction)
-        //delete(instruction), crashes my program, should not be needed anyawy, since I use tprintf to create it
     }
+        //delete(instruction), crashes my program, should not be needed anyawy, since I use tprintf to create it
     bb.delta_accum += delta_time
 
     if bb.delta_accum >= bb.delta_mark {
@@ -256,66 +253,7 @@ bar_chart_update::proc(bb: ^BarChart, delta_time: f32) {
     bar_chart_draw(bb)
 }
 
-new_bar_chart::proc {
-    new_bar_chart_vv,
-    //new_bar_chart_file,
-}
-
-/*
-BarChart::struct {
-    bars : []Bar,
-    instructions: InstructionBag,
-    highlight_idxs: IndexBag,
-    move : proc(bb: ^BarChart, direction: int),
-    delta_accum : f32, //below should be all zero init
-    delta_mark : f32,
-}
-*/
-
-/*
-//Handling the absence of channel???
-new_bar_chart_file::proc(file_path: string) -> (BarChart, bool) {
-    instructions, read_ok := Utils.read_lines_from_file(file_path)
-    if !read_ok{
-        fmt.printfln("Failed to create BarChart, due to reading of %v failing.", file_path)
-        return BarChart{}, false
-    }
-    nums, init_ok := extract_initial_numbers(instructions[0])
-    if !init_ok {
-        fmt.println("Failed to create BarChart, cannot extract the initial values, possible instructions corruption.")
-        return BarChart{}, false
-    }
-    bars, gen_ok := generate_bars(nums)
-    if !gen_ok{
-        fmt.println("Failed to create BarChart, bars cannot be generated from those values. Verify the first line of instructions.")
-        return BarChart{}, false
-    }
-    bar_chart := BarChart {
-        ch = 
-        bars = bars,
-        instructions = new_instruction_bag(),
-        highlight_idxs = new_index_bag(5),
-        move = bar_chart_move,
-        delta_mark = 2,
-    }
-    return bar_chart, true
-}
-*/
-
-/*
-
-BarChart::struct {
-    ch: chan.Chan(string),
-    bars : []Bar,
-    instructions: InstructionBag,
-    highlight_idxs: IndexBag,
-    move : proc(bb: ^BarChart, direction: int),
-    delta_accum : f32, //below should be all zero init
-    delta_mark : f32,
-}
-*/
-
-new_bar_chart_vv::proc(visv: ^vv.VisualVector($T), algorithm: proc(t: ^thread.Thread)) -> (BarChart, bool) {
+new_bar_chart::proc(visv: ^vv.VisualVector($T), algorithm: proc(t: ^thread.Thread)) -> (BarChart, bool) {
     instructions := new_instruction_bag()
     append(&instructions.instructions, visv.starting_state)
     log.debugf("Starting state from visv: %s", visv.starting_state)
@@ -333,11 +271,12 @@ new_bar_chart_vv::proc(visv: ^vv.VisualVector($T), algorithm: proc(t: ^thread.Th
     if algo_thread == nil {
         log.fatal("Failed to create the algo thread.")
     }
+    algo_thread.init_context = context
     algo_thread.user_args = visv
     thread.start(algo_thread) //no returns. Will panic on its own 
 
     bar_chart := BarChart {
-        ch = visv.ch,
+        connector = visv.connector,
         bars = bars,
         instructions = instructions,
         highlight_idxs = new_index_bag(5),

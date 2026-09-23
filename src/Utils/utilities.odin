@@ -3,8 +3,9 @@ package Utils
 import "core:fmt"
 import "core:os"
 import "core:strings"
+import "core:log"
 
-append_lines_to_file::proc(lines: [dynamic]string, file_path: string) -> bool {
+append_multiple_lines_to_file::proc(lines: [dynamic]string, file_path: string) -> bool {
     b := strings.builder_make()
     defer strings.builder_destroy(&b)
     for l in lines {
@@ -14,6 +15,15 @@ append_lines_to_file::proc(lines: [dynamic]string, file_path: string) -> bool {
     err := os.write_entire_file_from_string(file_path, strings.to_string(b))
     if err != nil {
         fmt.println("Failed to write into file: ", err)
+        return false
+    }
+    return true
+}
+
+append_line_to_file::proc(line: string, file_path: string) -> bool {
+    err := os.write_entire_file_from_string(file_path, line)
+    if err != nil {
+        log.errorf("Failed to write %s into file %s", line, file_path)
         return false
     }
     return true
