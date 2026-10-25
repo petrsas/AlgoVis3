@@ -21,12 +21,20 @@ append_multiple_lines_to_file::proc(lines: [dynamic]string, file_path: string) -
 }
 
 append_line_to_file::proc(line: string, file_path: string) -> bool {
-    err := os.write_entire_file_from_string(file_path, line)
+    file, err := os.open(file_path, os.O_WRONLY | os.O_CREATE | os.O_APPEND)
     if err != nil {
-        log.errorf("Failed to write %s into file %s", line, file_path)
+        log.fatalf("Failed to open file %s for appending", file_path)
         return false
     }
-    return true
+    defer os.close(file)
+    _, write_err := os.write_string(file, line)
+    if write_err != nil {
+        log.fatalf("Failed to append into file %s", file_path)
+        return false
+    }
+        os.write_string(file, "\n")
+
+        return true
 }
 
 write_lines_to_cleared_file::proc(lines: [dynamic]string, file_path: string) -> bool {

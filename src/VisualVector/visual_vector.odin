@@ -4,30 +4,34 @@ import "core:strings"
 import "core:fmt"
 import "base:intrinsics"
 import "core:thread"
+import "core:log"
+
 import "../Utils"
 import "../Globals"
-import con "../Connectors"
+import conn "../Connectors"
+import i "../Instructions/"
 
 VisualVector::struct($T: typeid) 
 where intrinsics.type_is_numeric(T){
     arr : [dynamic]T,
-    size : proc(vv: ^VisualVector(T)) -> int,
-    connector : con.Connector,
-    starting_state : string,
-    swap : proc(vv: ^VisualVector(T), idx_a, idx_b : int) -> bool,
-    cmp : proc(vv: ^VisualVector(T), idx_a, idx_b : int) -> (T, bool),
+    connector : conn.Connector,
+    algorithm : proc(vv: ^VisualVector(T)),
+    starting_state : [dynamic]T,
+    size : proc(self: ^VisualVector(T)) -> int,
+    swap : proc(self: ^VisualVector(T), idx_a, idx_b : int) -> bool,
+    cmp : proc(self: ^VisualVector(T), idx_a, idx_b : int) -> (T, bool),
 }
 
-vv_size::proc(vv: ^VisualVector($T)) -> int {
-    return len(vv.arr)
+vv_size::proc(self: ^VisualVector($T)) -> int {
+    return len(self.arr)
 }
 
-vv_swap::proc(vv: ^VisualVector($T), idx_a, idx_b : int) -> bool {
-    if idx_a < 0 || idx_a >= len(vv.arr) || idx_b < 0 || idx_b >= len(vv.arr) {
+vv_swap::proc(self: ^VisualVector($T), idx_a, idx_b : int) -> bool {
+    if idx_a < 0 || idx_a >= len(self.arr) || idx_b < 0 || idx_b >= len(self.arr) {
         return false
     }
-    vv.arr[idx_a], vv.arr[idx_b] = vv.arr[idx_b], vv.arr[idx_a]
-    con.send_instruction(&vv.connector, fmt.tprintf("S %d %d", idx_a, idx_b))
+    self.arr[idx_a], self.arr[idx_b] = self.arr[idx_b], self.arr[idx_a]
+    conn.send_instruction(&self.connector, i.vvSwap{idx_a, idx_b})
     return true
 } 
 
@@ -35,60 +39,54 @@ vv_swap::proc(vv: ^VisualVector($T), idx_a, idx_b : int) -> bool {
 //0 < if a < b
 //0 if a == b
 //false if error
-vv_cmp::proc(vv: ^VisualVector($T), idx_a, idx_b : int) -> (T, bool) {
-    if idx_a < 0 || idx_a >= len(vv.arr) || idx_b < 0 || idx_b >= len(vv.arr) {
+vv_cmp::proc(self: ^VisualVector($T), idx_a, idx_b : int) -> (T, bool) {
+    if idx_a < 0 || idx_a >= len(self.arr) || idx_b < 0 || idx_b >= len(self.arr) {
         return 0, false
     }
-    con.send_instruction(&vv.connector, fmt.tprintf("C %d %d", idx_a, idx_b))
-    return vv.arr[idx_a] - vv.arr[idx_b], true
+    conn.send_instruction(&self.connector, i.vvCmp{idx_a, idx_b})
+    return self.arr[idx_a] - self.arr[idx_b], true
 }
 
-new_visual_vector::proc(arr: [dynamic]$T) -> VisualVector(T) {
-    //storing starting state
-    b: strings.Builder
-    strings.builder_init(&b)
-    defer strings.builder_destroy(&b)
-
-    last_elem := len(arr) - 1
-
-    for i:=0; i<last_elem; i+=1 {
-        fmt.sbprintf(&b, "%v;", arr[i])
-    }
-    fmt.sbprintf(&b, "%v", arr[last_elem])
-
+visual_vector_init::proc(array: [dynamic]$T, algorithm: proc(vv: ^VisualVector(T))) -> VisualVector(T) {
     return {
-        connector = con.new_channel_connector(),
-        arr = arr,
-        starting_state = strings.clone(strings.to_string(b)),
+        connector = conn.connector_init(false, ""),
+        arr = array,
+        starting_state = array,
+        algorithm = algorithm,
         size = vv_size,
         swap = vv_swap,
         cmp = vv_cmp,
     }
 }
 
-new_visual_vector_logging::proc(arr: [dynamic]$T, file_path: string) -> VisualVector(T) {
-    //storing starting state
-    b: strings.Builder
-    strings.builder_init(&b)
-    defer strings.builder_destroy(&b)
-
-    last_elem := len(arr) - 1
-
-    for i:=0; i<last_elem; i+=1 {
-        fmt.sbprintf(&b, "%v;", arr[i])
-    }
-    fmt.sbprintf(&b, "%v", arr[last_elem])
-
+visual_vector_init_logging::proc(array: [dynamic]$T, algorithm: proc(visv: ^VisualVector(T)), logging_path: string) -> VisualVector(T) {
     return {
-        connector = con.new_file_connector(file_path),
-        arr = arr,
-        starting_state = strings.clone(strings.to_string(b)),
+        connector = conn.connector_init(true, logging_path),
+        arr = array,
+        starting_state = array,
+        algorithm = algorithm,
         size = vv_size,
         swap = vv_swap,
         cmp = vv_cmp,
     }
 }
 
-destroy_visual_vector :: proc(vv: ^VisualVector($T)) {
-    delete(vv.arr)
+thread_worker::proc($T: typeid) -> proc(self: ^VisualVector(T)) {
+    return proc(self: ^VisualVector(T)) {
+        if self.algorithm != nil {
+            self.algorithm(self)
+        }
+    }
+}
+
+trigger_algorithm::proc(self: ^VisualVector($T)) {
+    handle := thread.create_and_start_with_poly_data(self, thread_worker(T))
+    if handle == nil {
+        log.fatal("Failed to launch the algorithm in a seperate thread.")
+    }
+}
+
+visual_vector_destroy :: proc(self: ^VisualVector($T)) {
+    conn.connector_destroy(&self.connector)
+    delete(self.arr)
 }
