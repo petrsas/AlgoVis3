@@ -5,11 +5,12 @@ import "core:log"
 import rl "vendor:raylib"
 
 import bc "BarChart"
+import arr "Array"
 import cam "Camera2DController"
 import "Globals"
 import vv "VisualVector"
 
-BubbleSortOptimized :: proc(visv: ^vv.VisualVector($T)) {
+BubbleSortOptimized::proc(visv: ^vv.VisualVector($T)) {
 	n := visv.size(visv)
 
 	if (n == 0) {
@@ -51,13 +52,19 @@ main :: proc() {
 		log.fatal("Bar Chart creation check failed in main.")
 	}
 
+	array, array_ok := arr.array_init(&visv)
+	if !array_ok{
+		log.fatal("Array creation check failed in main.")
+	}
+
 	log.debug("Entering the main update loop...")
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
 		rl.BeginMode2D(camera2d.camera)
 		rl.ClearBackground(rl.BLACK)
 		cam.update_camera_2d_controller(&camera2d)
-		bc.bar_chart_update(&barc, rl.GetFrameTime())
+		//bc.bar_chart_update(&barc, rl.GetFrameTime())
+		arr.array_update(&array, rl.GetFrameTime())
 		rl.EndMode2D()
 		rl.EndDrawing()
 	}

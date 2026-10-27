@@ -13,13 +13,13 @@ import i "../Instructions"
 
 
 BarChart::struct {
-    connector : con.Connector,
-    bars : []Bar,
+    connector: con.Connector,
+    bars: []Bar,
     instructions_bag: i.InstructionBag,
     high_bag: i.IndexBag,
-    move : proc(self: ^BarChart, direction: int),
-    delta_accum : f32, //below should be all zero init
-    delta_mark : f32,
+    move: proc(self: ^BarChart, direction: int),
+    delta_accum: f32, //below should be all zero init
+    delta_mark: f32,
 }
 
 execute_instruction::proc(bb: ^BarChart, instruction: i.Instruction) {
